@@ -53,7 +53,12 @@ class OrderBook { // 订单簿
 					o.qty -= fill; // 对提交订单的手数作减
 					rest.qty -= fill; // 对队内订单的手数作减
 					// 步骤3 移除队首手数余零的订单
-					if (rest.qty == 0) level.pop_front();
+					if (rest.qty == 0) {
+						level.pop_front();
+						if (level.empty()) { // 若卖一空
+							asks_.erase(asks_.begin()); // 则删除原有的卖一档
+						}
+					}
 				}
 				// 步骤4 将有余的提交订单挂进买盘
 				if (o.qty > 0) {

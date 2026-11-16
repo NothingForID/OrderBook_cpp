@@ -34,19 +34,25 @@ class OrderBook { // 订单簿
 	using Level = std::deque<Order>; // 同价订单队列，按提交先后排序  
 	std::map<Price, Level> asks_; // 卖盘, key 升序, begin 指向最低价  
 	std::map<Price, Level, std::greater<>> bids_; // 买盘, key 降序, begin 指向最高价  
+	
+	static bool crosses(const Order& o, Price px) {
+	// 根据订单方向与对手盘一档比价，判断能否撮合
+		return o.side == Side::Buy ? o.price >= px : o.price <= px;
+	}
 
-	public:
-		// 提交一个订单，返回这次提交产生的所有成交
-		std::vector<Trade> submit(Order o) { // 不被多线程调用
-			std::vector<Trade> trades; // 存放成交订单
-			if (o.side == Side::Buy) { // 处理买单
-				while ( // 步骤1 判断价格和盘口余量
-							o.qty > 0 // 买单手数剩余大于0
-							&& !asks_.empty() // 卖盘非空
-							&& o.price >= asks_.begin()->first // 卖一价格低于买单报价
+	template <class Book>
+	void match(
+		Order& o, // 新提交的订单
+		Book& book, // 对手盘
+		std::vector<Trade>& trades // 记录成交的容器
+	) {
+		while ( // 步骤1 判断价格和盘口余量
+					o.qty > 0 // 提交订单的余量大于零
+					&& !book.empty() // 对手盘非空
+					&& crosses(o, book.begin()->first) // 比价满足撮合
 				) {
-					auto& [px, level] = *asks_.begin(); // 结构化绑定
-					Order& rest = level.front(); // 引用选取队首卖单
+					auto& [px, level] = *book.begin(); // 结构化绑定
+					Order& rest = book.front(); // 引用选取队首卖单
 					// 步骤2 手数取小作减
 					Qty fill = std::min(o.qty, rest.qty); // 手数取小
 					trades.push_back({rest.id, o.id, px, fill}); // 记录成交
@@ -54,22 +60,27 @@ class OrderBook { // 订单簿
 					rest.qty -= fill; // 对队内订单的手数作减
 					// 步骤3 移除队首手数余零的订单
 					if (rest.qty == 0) {
-						level.pop_front();
-						if (level.empty()) { // 若卖一空
-							asks_.erase(asks_.begin()); // 则删除原有的卖一档
+						book.pop_front();
+						if (book.empty()) { // 若对手盘一档为空
+							book.erase(book.begin()); // 则删除原有的一档
 						}
 					}
 				}
-				// 步骤4 将有余的提交订单挂进买盘
-				if (o.qty > 0) {
-					// 新建价格档位订单队列
-					Level& level = o.side == Side::Buy ? bids_[o.price]
-																							:asks_[o.price];
-					level.push_back(o); // 将提交的余单
-				}
-				return trades;
+	}
+	public:
+		// 提交一个订单，返回这次提交产生的所有成交
+		std::vector<Trade> submit(Order o) { // 不被多线程调用
+			std::vector<Trade> trades; // 存放成交订单
+			// 买单对手卖盘，卖单对手买盘
+			if (o.side == Side::Buy) match(o, asks_, trades);
+			else match(o, bids_, trades);
+			// 步骤4 将有余的提交订单挂进买盘
+			if (o.qty > 0) {
+				// 新建价格档位订单队列
+				Level& level = o.side == Side::Buy ? bids_[o.price]
+																						:asks_[o.price];
+				level.push_back(o); // 将提交的余单挂入新档
 			}
-		};
+			return trades;
+		}
 };
-
-

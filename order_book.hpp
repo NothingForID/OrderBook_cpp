@@ -1,7 +1,9 @@
 #include <cstdint>
-#include <deque>
+// #include <deque>
+#include <list>
 #include <map>
 #include <vector>
+#include <unordered_map>
 
 using Id    = std::int64_t;
 using Price = std::int64_t; // 单位是分
@@ -31,10 +33,11 @@ struct Trade {	// 成交
 class OrderBook { // 订单簿
 	// 订单规模 1e+5
 	// 价格规模 1e+2
-	using Level = std::deque<Order>; // 同价订单队列，按提交先后排序  
+	using Level = std::list<Order>; // 同价订单队列，按提交先后排序  
 	std::map<Price, Level> asks_; // 卖盘, key 升序, begin 指向最低价  
 	std::map<Price, Level, std::greater<>> bids_; // 买盘, key 降序, begin 指向最高价  
-	
+	std::unordered_map<Id, Level::iterator> index_; // 订单索引表
+
 	static bool crosses(const Order& o, Price px) {
 	// 根据订单方向与对手盘一档比价，判断能否撮合
 		return o.side == Side::Buy ? o.price >= px : o.price <= px;
@@ -60,6 +63,7 @@ class OrderBook { // 订单簿
 					rest.qty -= fill; // 对队内订单的手数作减
 					// 步骤3 移除队首手数余零的订单
 					if (rest.qty == 0) {
+						index_.erase(rest.id); // 从索引表内删除完全成交的订单
 						book.pop_front();
 						if (book.empty()) { // 若对手盘一档为空
 							book.erase(book.begin()); // 则删除原有的一档
@@ -67,6 +71,18 @@ class OrderBook { // 订单簿
 					}
 				}
 	}
+
+	template <class Book>
+	void remove(Book& book, Level::iterator it) {
+		// 完成撤单函数 `cancel()` 的步骤2, 3, 5
+		// 步骤02 用订单价格查找档位
+		auto lv = book.find(it->price);
+		// 步骤03 在档内删除订单
+		lv->second.erase(it);
+		// 步骤05 若档内无余单，则删档
+		if (lv->second.empty()) book.erase(lv);
+	}
+
 	public:
 		// 提交一个订单，返回这次提交产生的所有成交
 		std::vector<Trade> submit(Order o) { // 不被多线程调用
@@ -79,8 +95,23 @@ class OrderBook { // 订单簿
 				// 新建价格档位订单队列
 				Level& level = o.side == Side::Buy ? bids_[o.price]
 																						:asks_[o.price];
-				level.push_back(o); // 将提交的余单挂入新档
+				index_[o.id] = level.insert(level.end(), o); // 将提交的余单挂入新档
 			}
 			return trades;
+		}
+
+		bool cancel(Id id) {
+			// 步骤01 查索引表
+			auto hit = index_.find(id);
+			// 若查找不到，则返回否
+			if (hit == index_.end()) return false;
+			// 否则取迭代器，指向 Order 节点
+			Level::iterator it = hit->second;
+			// 根据交易方向选择盘口撤单 步骤02, 03, 05
+			if (it->side == Side::Buy) remove(bids_, it);
+			else remove(asks_, it);
+			// 步骤04 在索引表内删除 id 
+			index_.erase(hit);
+			return true;
 		}
 };

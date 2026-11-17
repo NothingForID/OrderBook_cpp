@@ -74,8 +74,8 @@ class OrderBook { // 订单簿
 			// 买单对手卖盘，卖单对手买盘
 			if (o.side == Side::Buy) match(o, asks_, trades);
 			else match(o, bids_, trades);
-			// 步骤4 将有余的提交订单挂进买盘
-			if (o.qty > 0) {
+			// 步骤4 将有余的 GTC 提交订单挂进买盘
+			if (o.qty > 0 && o.type == Type::GTC) {
 				// 新建价格档位订单队列
 				Level& level = o.side == Side::Buy ? bids_[o.price]
 																						:asks_[o.price];

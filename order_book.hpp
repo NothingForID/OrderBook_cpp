@@ -114,4 +114,27 @@ class OrderBook { // 订单簿
 			index_.erase(hit);
 			return true;
 		}
+
+		std::vector<Trade> modify(Id id, Price price, Qty qty) {
+			// 步骤01 查表取单
+			auto hit = index_.find(id);
+			// 若查无此单，则返回空
+			if (hit == index_.end()) return {};
+			// 否则解引用迭代器取单
+			Order& cur = *hit->second;
+			// 单纯减量，仅在原地修改,即可返回
+			if (qty > 0 && price == cur.price && qty <= cur.qty) {
+				cur.qty = qty;
+				return {};
+			}
+			// 复制订单，避免删除节点之后引用悬空
+			Order next = cur;
+			cancel(id);
+			// 若改单为非正数量，则视作撤单返回空
+			if (qty <= 0) return {};
+			// 否则更改价量，之后重新挂单，返回成交
+			next.price = price;
+			next.qty = qty;
+			return submit(next);
+		}
 };

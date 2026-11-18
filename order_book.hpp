@@ -122,8 +122,17 @@ class OrderBook { // 订单簿
 			if (hit == index_.end()) return {};
 			// 否则解引用迭代器取单
 			Order& cur = *hit->second;
-			// 单纯减量，仅在原地修改,即可返回
-			if (qty > 0 && price == cur.price && qty <= cur.qty) {
+			// 保价改量
+			if (qty > 0 && price == cur.price) {
+				// 单纯增量
+				if (qty > cur.qty) {
+					// 根据交易方向查找价格档位
+					Level& level = cur.side == Side::Buy ? bids_[price] 
+																							 : asks_[price];
+					// 移至队尾 .splice(拼接位置，节点来源，节点)
+					level.splice(level.end(), level, hit->second);
+				}
+				// 单纯减量，仅在原地修改,即可返回
 				cur.qty = qty;
 				return {};
 			}
